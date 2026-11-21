@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Urban Air Quality Assistant</title>
+  <meta name="description" content="Personalized low-emission routines and indoor air hacks for families during winter smog.">
+  <style>
+    :root {
+      --bg: #f4f7f6;
+      --card: #ffffff;
+      --text: #1d2a27;
+      --muted: #5b6b67;
+      --accent: #1f6f5c;
+      --border: #d7e1de;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root:not([data-theme="light"]) {
+        --bg: #101816;
+        --card: #18231f;
+        --text: #e6efec;
+        --muted: #9fb3ad;
+        --accent: #5fc4a8;
+        --border: #2c3d38;
+      }
+    }
+    :root[data-theme="dark"] {
+      --bg: #101816;
+      --card: #18231f;
+      --text: #e6efec;
+      --muted: #9fb3ad;
+      --accent: #5fc4a8;
+      --border: #2c3d38;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    }
+    header, main, footer { max-width: 920px; margin: 0 auto; padding: 0 16px; }
+    header { padding-top: 28px; }
+    h1 { font-size: 1.6rem; margin: 0 0 4px; }
+    h2 { font-size: 1.1rem; margin: 0 0 10px; }
+    .lede { color: var(--muted); margin: 0 0 20px; }
+    .grid { display: grid; gap: 16px; grid-template-columns: 1fr; }
+    @media (min-width: 720px) { .grid { grid-template-columns: 1fr 1fr; } }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 18px;
+    }
+    label { display: block; font-weight: 600; margin: 12px 0 4px; }
+    input[type="number"] {
+      width: 100%;
+      padding: 10px;
+      font: inherit;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--bg);
+      color: var(--text);
+    }
+    .check { display: flex; align-items: center; gap: 8px; margin: 8px 0; font-weight: 400; }
+    .hint { color: var(--muted); font-size: 0.9rem; margin: 4px 0 0; }
+    button {
+      margin-top: 16px;
+      padding: 12px 18px;
+      font: inherit;
+      font-weight: 600;
+      color: #fff;
+      background: var(--accent);
+      border: 0;
+      border-radius: 8px;
+      cursor: pointer;
+      width: 100%;
+    }
+    button:focus-visible, input:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+    .badge {
+      display: inline-block;
+      padding: 6px 12px;
+      border-radius: 999px;
+      color: #fff;
+      font-weight: 700;
+      font-size: 0.95rem;
+    }
+    .summary { margin: 12px 0 0; }
+    ul { padding-left: 20px; margin: 6px 0; }
+    li { margin: 4px 0; }
+    .full { grid-column: 1 / -1; }
+    .error { color: #c62828; font-weight: 600; min-height: 1.2em; }
+    footer { color: var(--muted); font-size: 0.85rem; padding-bottom: 32px; margin-top: 24px; }
+    .empty { color: var(--muted); }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Urban Air Quality Assistant</h1>
+    <p class="lede">Enter today's AQI and your household details to get a low-emission routine and indoor air plan for winter smog.</p>
+  </header>
+
+  <main class="grid">
+    <section class="card" aria-labelledby="inputs-title">
+      <h2 id="inputs-title">Today's conditions</h2>
+      <form id="plan-form" novalidate>
+        <label for="aqi">Outdoor AQI (US EPA scale, 0 to 500)</label>
+        <input id="aqi" name="aqi" type="number" min="0" max="500" step="1" inputmode="numeric" required placeholder="e.g. 165">
+        <p class="hint">Check your local AQI from your city's air monitoring website or app.</p>
+
+        <h3 style="font-size:1rem;margin:18px 0 0">Who lives here?</h3>
+        <label class="check"><input type="checkbox" name="hasChildren"> Children under 12 at home</label>
+        <label class="check"><input type="checkbox" name="hasOlderAdults"> Older adults (65+)</label>
+        <label class="check"><input type="checkbox" name="hasAsthma"> Asthma or allergies</label>
+        <label class="check"><input type="checkbox" name="hasHeartOrLungCondition"> Heart or lung condition</label>
+        <label class="check"><input type="checkbox" name="pregnant"> Pregnancy</label>
+        <label class="check"><input type="checkbox" name="hasPets"> Pets that go outside</label>
+        <label class="check"><input type="checkbox" name="hasAirPurifier"> We have an air purifier</label>
+
+        <label for="roomAreaM2">Main room size (m², optional)</label>
+        <input id="roomAreaM2" name="roomAreaM2" type="number" min="1" step="1" inputmode="numeric" placeholder="e.g. 25">
+        <p class="hint">Used to estimate the purifier size you need.</p>
+
+        <p class="error" id="form-error" role="alert"></p>
+        <button type="submit">Build today's plan</button>
+      </form>
+    </section>
+
+    <section class="card" aria-live="polite" aria-labelledby="plan-title">
+      <h2 id="plan-title">Today's plan</h2>
+      <div id="plan"><p class="empty">Enter an AQI to see your plan.</p></div>
+    </section>
+
+    <footer class="full">
+      This tool gives general guidance and does not replace medical advice. For breathing problems, follow your doctor's asthma or care plan and seek urgent care when symptoms are severe. Your entries are stored only in this browser.
+    </footer>
+  </main>
+
+  <script src="js/logic.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
