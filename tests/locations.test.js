@@ -51,3 +51,22 @@ test("fetchCurrentAQI rejects invalid coordinates without fetching", async () =>
   await assert.rejects(Loc.fetchCurrentAQI(200, 0, mockFetch), RangeError);
   assert.equal(called, false);
 });
+
+test("searchPlaces maps geocoding results and skips short queries", async () => {
+  assert.deepEqual(await Loc.searchPlaces("a"), []);
+  const mockFetch = async (url) => {
+    assert.match(url, /geocoding-api\.open-meteo\.com/);
+    return { ok: true, json: async () => ({ results: [
+      { name: "Lahore", latitude: 31.558, longitude: 74.35, admin1: "Punjab", country: "Pakistan" },
+      { name: "Broken", latitude: 500, longitude: 0 }
+    ] }) };
+  };
+  const r = await Loc.searchPlaces("Lahore", mockFetch);
+  assert.equal(r.length, 1);
+  assert.deepEqual(r[0], { name: "Lahore", region: "Punjab", country: "Pakistan", lat: 31.558, lon: 74.35 });
+});
+
+test("searchPlaces returns empty list when nothing matches", async () => {
+  const mockFetch = async () => ({ ok: true, json: async () => ({}) });
+  assert.deepEqual(await Loc.searchPlaces("zzzz", mockFetch), []);
+});

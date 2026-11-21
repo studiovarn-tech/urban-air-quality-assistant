@@ -62,12 +62,43 @@
     });
   }
 
+  /**
+   * Looks up places by name with the Open-Meteo geocoding API (free, no key).
+   * Resolves to an array of { name, region, country, lat, lon } (may be empty).
+   */
+  function searchPlaces(query, fetchImpl) {
+    var q = String(query || "").trim();
+    if (q.length < 2) return Promise.resolve([]);
+    var doFetch = fetchImpl || (typeof fetch !== "undefined" ? fetch : null);
+    if (!doFetch) return Promise.reject(new Error("fetch is not available"));
+    var url = "https://geocoding-api.open-meteo.com/v1/search" +
+      "?name=" + encodeURIComponent(q) + "&count=6&language=en&format=json";
+    return doFetch(url).then(function (res) {
+      if (!res.ok) throw new Error("Place search failed (" + res.status + ")");
+      return res.json();
+    }).then(function (body) {
+      var results = (body && body.results) || [];
+      return results
+        .filter(function (r) { return isValidCoord(r.latitude, r.longitude); })
+        .map(function (r) {
+          return {
+            name: r.name,
+            region: r.admin1 || "",
+            country: r.country || "",
+            lat: r.latitude,
+            lon: r.longitude
+          };
+        });
+    });
+  }
+
   var api = {
     CITIES: CITIES,
     DEFAULT_CITY_ID: DEFAULT_CITY_ID,
     findCity: findCity,
     isValidCoord: isValidCoord,
-    fetchCurrentAQI: fetchCurrentAQI
+    fetchCurrentAQI: fetchCurrentAQI,
+    searchPlaces: searchPlaces
   };
 
   if (typeof module !== "undefined" && module.exports) {

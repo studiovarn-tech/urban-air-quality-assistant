@@ -46,15 +46,26 @@
     room: $("roomAreaM2"),
     manual: $("aqi-manual"),
     clearManual: $("clear-manual"),
-    theme: $("theme-toggle")
+    theme: $("theme-toggle"),
+    openSearch: $("open-search"),
+    sheet: $("sheet"),
+    backdrop: $("sheet-backdrop"),
+    placeSearch: $("place-search"),
+    results: $("search-results"),
+    sheetLocate: $("sheet-locate"),
+    sheetError: $("sheet-error"),
+    sheetDone: $("sheet-done"),
+    share: $("share-btn"),
+    shareStatus: $("share-status")
   };
 
   var state = {
     cityId: Loc.DEFAULT_CITY_ID,
-    coords: null,          // { lat, lon, name } when using current location
+    coords: null,          // { lat, lon, name } when using a searched place or current location
     profile: {},
     manualAqi: null,
-    theme: null            // "light" | "dark" | null (follow system)
+    theme: null,           // "light" | "dark" | null (follow system)
+    onboarded: false       // true once the user has chosen a location in the sheet
   };
   var requestId = 0;
   var lastAQI = null;      // { aqi, time }
@@ -80,6 +91,7 @@
         if (saved.profile && typeof saved.profile === "object") state.profile = saved.profile;
         if (typeof saved.manualAqi === "number") state.manualAqi = saved.manualAqi;
         if (saved.theme === "light" || saved.theme === "dark") state.theme = saved.theme;
+        if (saved.onboarded === true) state.onboarded = true;
       }
     } catch (e) { /* corrupt storage: start fresh */ }
   }
@@ -300,10 +312,182 @@
     saveState();
   });
 
+  /* ---------- Location sheet (first run and "Search") ---------- */
+
+  var pendingPlace = null;   // place chosen in the sheet, not yet applied
+  var searchTimer = null;
+  var searchId = 0;
+
+  function setPlace(place) {
+    state.coords = { lat: place.lat, lon: place.lon, name: place.name };
+    populateCities();
+    showHint();
+    saveState();
+    loadLiveAQI();
+  }
+
+  function renderResults(items, emptyText) {
+    els.results.innerHTML = "";
+    if (!items.length) {
+      if (emptyText) {
+        var p = document.createElement("p");
+        p.className = "hint";
+        p.textContent = emptyText;
+        els.results.appendChild(p);
+      }
+      return;
+    }
+    items.forEach(function (item) {
+      var btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "result";
+      btn.textContent = item.name;
+      var sub = [item.region, item.country].filter(Boolean).join(", ");
+      if (sub) {
+        var small = document.createElement("small");
+        small.textContent = sub;
+        btn.appendChild(small);
+      }
+      btn.addEventListener("click", function () {
+        pendingPlace = { name: sub ? item.name + ", " + sub : item.name, lat: item.lat, lon: item.lon };
+        els.sheetError.textContent = "";
+        els.sheetDone.disabled = false;
+        els.results.querySelectorAll(".result").forEach(function (b) {
+          b.style.fontWeight = b === btn ? "600" : "";
+        });
+      });
+      els.results.appendChild(btn);
+    });
+  }
+
+  function showPresets() {
+    renderResults(Loc.CITIES.map(function (c) {
+      return { name: c.name, region: "", country: c.country, lat: c.lat, lon: c.lon };
+    }), "");
+  }
+
+  function openSheet() {
+    pendingPlace = null;
+    els.sheetDone.disabled = true;
+    els.sheetError.textContent = "";
+    els.placeSearch.value = "";
+    showPresets();
+    els.backdrop.hidden = false;
+    els.sheet.hidden = false;
+    setTimeout(function () { els.placeSearch.focus(); }, 50);
+  }
+
+  function closeSheet() {
+    els.sheet.hidden = true;
+    els.backdrop.hidden = true;
+  }
+
+  els.openSearch.addEventListener("click", openSheet);
+  els.backdrop.addEventListener("click", function () {
+    if (state.onboarded) closeSheet();
+  });
+  document.addEventListener("keydown", function (e) {
+    if (e.key === "Escape" && !els.sheet.hidden && state.onboarded) closeSheet();
+  });
+
+  els.placeSearch.addEventListener("input", function () {
+    var q = els.placeSearch.value.trim();
+    clearTimeout(searchTimer);
+    if (q.length < 2) { showPresets(); return; }
+    searchTimer = setTimeout(function () {
+      var id = ++searchId;
+      Loc.searchPlaces(q).then(function (places) {
+        if (id !== searchId) return;
+        renderResults(places, "No places found for “" + q + "”.");
+      }).catch(function () {
+        if (id !== searchId) return;
+        renderResults([], "Search is unavailable right now. Try again or use your current location.");
+      });
+    }, 300);
+  });
+
+  els.sheetLocate.addEventListener("click", function () {
+    if (!navigator.geolocation) {
+      els.sheetError.textContent = "This browser cannot share your location. Search for a city instead.";
+      return;
+    }
+    els.sheetError.textContent = "";
+    navigator.geolocation.getCurrentPosition(function (pos) {
+      pendingPlace = {
+        name: "Current location",
+        lat: Number(pos.coords.latitude.toFixed(4)),
+        lon: Number(pos.coords.longitude.toFixed(4))
+      };
+      els.sheetDone.disabled = false;
+      els.results.querySelectorAll(".result").forEach(function (b) { b.style.fontWeight = ""; });
+    }, function () {
+      els.sheetError.textContent = "Location permission was not granted. Search for a city instead.";
+    }, { enableHighAccuracy: false, timeout: 10000, maximumAge: 600000 });
+  });
+
+  els.sheetDone.addEventListener("click", function () {
+    if (!pendingPlace) return;
+    state.onboarded = true;
+    setPlace(pendingPlace);
+    closeSheet();
+  });
+
+  /* ---------- Share ---------- */
+
+  function buildShareText() {
+    var place = currentPlace();
+    var manualValid = typeof state.manualAqi === "number";
+    var aqi = manualValid ? state.manualAqi : (lastAQI ? lastAQI.aqi : null);
+    if (aqi === null) return null;
+    var plan = L.buildPlan({ aqi: aqi, profile: state.profile });
+    var lines = [
+      "Air in " + place.name + ": US AQI " + Math.round(aqi) + " (" + plan.effectiveCategory + ").",
+      plan.summary,
+      "Best outdoor window: " + plan.outdoor.bestWindow + "."
+    ];
+    if (plan.indoor.length) lines.push("Indoor tip: " + plan.indoor[0]);
+    lines.push("Plan from Urban Air Quality Assistant: " + location.href.split("#")[0]);
+    return lines.join("\n");
+  }
+
+  function setShareStatus(text) { els.shareStatus.textContent = text; }
+
+  els.share.addEventListener("click", function () {
+    var text = buildShareText();
+    if (!text) { setShareStatus("Air data is needed before you can share."); return; }
+    var title = "Today's air plan";
+    if (navigator.share) {
+      navigator.share({ title: title, text: text }).then(function () {
+        setShareStatus("Shared.");
+      }).catch(function (err) {
+        if (err && err.name === "AbortError") return;
+        copyFallback(text);
+      });
+    } else {
+      copyFallback(text);
+    }
+  });
+
+  function copyFallback(text) {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(function () {
+        setShareStatus("Plan copied to clipboard.");
+      }).catch(function () { setShareStatus("Could not copy. Select the plan text manually."); });
+    } else {
+      setShareStatus("Sharing is not supported in this browser.");
+    }
+  }
+
+  /* ---------- Start ---------- */
+
   loadState();
   applyTheme();
   populateCities();
   showHint();
   refresh();
-  loadLiveAQI();
+  if (state.onboarded) {
+    loadLiveAQI();
+  } else {
+    openSheet();
+  }
 })();

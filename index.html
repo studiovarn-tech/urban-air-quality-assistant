@@ -181,6 +181,42 @@
 
     footer { color: var(--muted); font-size: 13px; padding: 24px 8px 0; text-align: center; }
 
+    .share-btn {
+      margin-top: 16px; border: 0; border-radius: 999px; padding: 10px 18px;
+      background: rgba(255,255,255,.22); color: #fff; font-weight: 600; font-size: 15px; cursor: pointer;
+      backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+    }
+    .share-btn:hover { background: rgba(255,255,255,.3); }
+
+    .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+    .sheet-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,.35); z-index: 20; backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px); }
+    .sheet {
+      position: fixed; left: 50%; bottom: 0; transform: translateX(-50%); width: 100%; max-width: 560px;
+      background: var(--card); border-radius: 22px 22px 0 0; padding: 12px 20px calc(20px + env(safe-area-inset-bottom));
+      box-shadow: 0 -10px 40px rgba(0,0,0,.2); z-index: 21; max-height: 88vh; overflow-y: auto;
+    }
+    .sheet[hidden], .sheet-backdrop[hidden] { display: none; }
+    .sheet-grab { width: 40px; height: 5px; border-radius: 999px; background: var(--separator); margin: 0 auto 14px; }
+    .sheet h2 { font-size: 22px; font-weight: 700; margin: 0; letter-spacing: -.01em; }
+    .sheet-sub { color: var(--muted); font-size: 15px; margin: 6px 0 14px; }
+    .search-input {
+      width: 100%; padding: 12px 14px; border: 0; border-radius: 12px; background: var(--fill);
+      font-size: 17px; color: var(--text);
+    }
+    .search-results { margin-top: 8px; }
+    .result {
+      display: block; width: 100%; text-align: left; border: 0; background: none; padding: 12px 4px;
+      border-top: 1px solid var(--separator); cursor: pointer; color: var(--text);
+    }
+    .result:first-child { border-top: 0; }
+    .result small { display: block; color: var(--muted); font-size: 13px; }
+    .sheet-btn {
+      display: block; width: 100%; margin-top: 12px; padding: 14px; border: 0; border-radius: 14px;
+      background: var(--tint); color: #fff; font-size: 17px; font-weight: 600; cursor: pointer;
+    }
+    .sheet-btn.secondary { background: var(--fill); color: var(--tint); }
+    .sheet-btn:disabled { opacity: .4; cursor: default; }
+
     @media (min-width: 720px) {
       .plan-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; }
       .hero, .plan-grid, .household { grid-column: 1 / -1; }
@@ -213,6 +249,10 @@
           </div>
         </div>
         <div class="row">
+          <span class="row-label">Search any city</span>
+          <button class="link-btn" id="open-search" type="button">Search</button>
+        </div>
+        <div class="row">
           <span class="row-label">Use my current location</span>
           <button class="link-btn" id="locate-btn" type="button">Locate</button>
         </div>
@@ -225,6 +265,8 @@
         <p class="hero-summary" id="hero-summary"></p>
         <div class="scale" aria-hidden="true"><div class="scale-dot" id="scale-dot" style="left:0%"></div></div>
         <div class="hero-status" id="hero-status" role="status"></div>
+        <button class="share-btn" id="share-btn" type="button">Share today's plan</button>
+        <div class="hero-status" id="share-status" role="status"></div>
       </section>
 
       <div class="plan-grid" id="plan"></div>
@@ -253,6 +295,19 @@
         </details>
       </section>
     </div>
+
+    <div class="sheet-backdrop" id="sheet-backdrop" hidden></div>
+    <section class="sheet" id="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-title" hidden>
+      <div class="sheet-grab" aria-hidden="true"></div>
+      <h2 id="sheet-title">Where are you?</h2>
+      <p class="sheet-sub">Enter your city or use your current location. We'll check the air there and build your plan.</p>
+      <label class="sr-only" for="place-search">Search for a city</label>
+      <input class="search-input" id="place-search" type="search" placeholder="City name, e.g. Lahore" autocomplete="off" enterkeyhint="search">
+      <div class="search-results" id="search-results" aria-live="polite"></div>
+      <button class="sheet-btn secondary" id="sheet-locate" type="button">Use my current location</button>
+      <p class="error" id="sheet-error" role="alert"></p>
+      <button class="sheet-btn" id="sheet-done" type="button" disabled>Continue</button>
+    </section>
 
     <footer>
       General guidance only, not medical advice. For breathing problems, follow your doctor's plan and seek urgent care when symptoms are severe.<br>
