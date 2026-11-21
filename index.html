@@ -2,141 +2,266 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Urban Air Quality Assistant</title>
-  <meta name="description" content="Personalized low-emission routines and indoor air hacks for families during winter smog.">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="light dark">
+  <title>Air · Urban Air Quality Assistant</title>
+  <meta name="description" content="Live air quality for your city, with personalized low-emission routines and indoor air hacks for winter smog.">
   <style>
     :root {
-      --bg: #f4f7f6;
+      --bg: #f2f2f7;
       --card: #ffffff;
-      --text: #1d2a27;
-      --muted: #5b6b67;
-      --accent: #1f6f5c;
-      --border: #d7e1de;
+      --text: #1c1c1e;
+      --muted: #8e8e93;
+      --separator: #e5e5ea;
+      --tint: #007aff;
+      --fill: #e9e9ef;
+      --shadow: 0 1px 2px rgba(0,0,0,.04), 0 4px 16px rgba(0,0,0,.06);
+      --radius: 18px;
+      --aqi: #34c759;
     }
     @media (prefers-color-scheme: dark) {
       :root:not([data-theme="light"]) {
-        --bg: #101816;
-        --card: #18231f;
-        --text: #e6efec;
-        --muted: #9fb3ad;
-        --accent: #5fc4a8;
-        --border: #2c3d38;
+        --bg: #000000;
+        --card: #1c1c1e;
+        --text: #f5f5f7;
+        --muted: #8e8e93;
+        --separator: #38383a;
+        --tint: #0a84ff;
+        --fill: #2c2c2e;
+        --shadow: none;
       }
     }
     :root[data-theme="dark"] {
-      --bg: #101816;
-      --card: #18231f;
-      --text: #e6efec;
-      --muted: #9fb3ad;
-      --accent: #5fc4a8;
-      --border: #2c3d38;
+      --bg: #000000;
+      --card: #1c1c1e;
+      --text: #f5f5f7;
+      --muted: #8e8e93;
+      --separator: #38383a;
+      --tint: #0a84ff;
+      --fill: #2c2c2e;
+      --shadow: none;
     }
+
     * { box-sizing: border-box; }
+    html { -webkit-text-size-adjust: 100%; }
     body {
       margin: 0;
       background: var(--bg);
       color: var(--text);
-      font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, system-ui, sans-serif;
+      font-size: 17px;
+      line-height: 1.45;
+      -webkit-font-smoothing: antialiased;
     }
-    header, main, footer { max-width: 920px; margin: 0 auto; padding: 0 16px; }
-    header { padding-top: 28px; }
-    h1 { font-size: 1.6rem; margin: 0 0 4px; }
-    h2 { font-size: 1.1rem; margin: 0 0 10px; }
-    .lede { color: var(--muted); margin: 0 0 20px; }
-    .grid { display: grid; gap: 16px; grid-template-columns: 1fr; }
-    @media (min-width: 720px) { .grid { grid-template-columns: 1fr 1fr; } }
+    button, select, input { font: inherit; color: inherit; }
+    :focus-visible { outline: 3px solid var(--tint); outline-offset: 2px; border-radius: 8px; }
+
+    /* Top bar */
+    .topbar {
+      position: sticky; top: 0; z-index: 10;
+      backdrop-filter: saturate(180%) blur(20px);
+      -webkit-backdrop-filter: saturate(180%) blur(20px);
+      background: color-mix(in srgb, var(--bg) 80%, transparent);
+      border-bottom: 1px solid var(--separator);
+    }
+    .topbar-inner {
+      max-width: 680px; margin: 0 auto; padding: 12px 20px;
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .brand { font-weight: 600; font-size: 17px; }
+    .theme-btn {
+      border: 0; background: var(--fill); border-radius: 999px;
+      padding: 6px 12px; font-size: 14px; font-weight: 500; cursor: pointer; color: var(--text);
+    }
+
+    main { max-width: 680px; margin: 0 auto; padding: 8px 16px 40px; }
+    .large-title { font-size: 34px; font-weight: 700; letter-spacing: -.02em; margin: 14px 4px 4px; }
+    .subtitle { color: var(--muted); margin: 0 4px 18px; font-size: 15px; }
+
+    .stack { display: grid; gap: 16px; }
     .card {
-      background: var(--card);
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      padding: 18px;
+      background: var(--card); border-radius: var(--radius);
+      box-shadow: var(--shadow); overflow: hidden;
     }
-    label { display: block; font-weight: 600; margin: 12px 0 4px; }
-    input[type="number"] {
-      width: 100%;
-      padding: 10px;
-      font: inherit;
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      background: var(--bg);
-      color: var(--text);
+    .card-pad { padding: 18px 20px; }
+    .section-title {
+      font-size: 13px; font-weight: 600; text-transform: uppercase;
+      letter-spacing: .04em; color: var(--muted); margin: 22px 20px 8px;
     }
-    .check { display: flex; align-items: center; gap: 8px; margin: 8px 0; font-weight: 400; }
-    .hint { color: var(--muted); font-size: 0.9rem; margin: 4px 0 0; }
-    button {
-      margin-top: 16px;
-      padding: 12px 18px;
-      font: inherit;
-      font-weight: 600;
-      color: #fff;
-      background: var(--accent);
-      border: 0;
-      border-radius: 8px;
-      cursor: pointer;
-      width: 100%;
+    .row {
+      display: flex; align-items: center; justify-content: space-between; gap: 12px;
+      padding: 14px 20px; min-height: 52px; border-top: 1px solid var(--separator);
     }
-    button:focus-visible, input:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
-    .badge {
-      display: inline-block;
-      padding: 6px 12px;
-      border-radius: 999px;
-      color: #fff;
-      font-weight: 700;
-      font-size: 0.95rem;
+    .row:first-child { border-top: 0; }
+    .row-label { font-weight: 400; }
+    .row-hint { color: var(--muted); font-size: 13px; margin-top: 2px; }
+
+    /* Location */
+    .select-wrap { position: relative; }
+    select.location-select {
+      appearance: none; -webkit-appearance: none;
+      background: transparent; border: 0; padding: 4px 22px 4px 0;
+      color: var(--tint); font-size: 17px; font-weight: 500; cursor: pointer; text-align: right;
+      max-width: 220px;
     }
-    .summary { margin: 12px 0 0; }
-    ul { padding-left: 20px; margin: 6px 0; }
-    li { margin: 4px 0; }
-    .full { grid-column: 1 / -1; }
-    .error { color: #c62828; font-weight: 600; min-height: 1.2em; }
-    footer { color: var(--muted); font-size: 0.85rem; padding-bottom: 32px; margin-top: 24px; }
-    .empty { color: var(--muted); }
+    .select-wrap::after {
+      content: ""; position: absolute; right: 4px; top: 50%; width: 7px; height: 7px;
+      border-right: 2px solid var(--tint); border-bottom: 2px solid var(--tint);
+      transform: translateY(-65%) rotate(45deg); pointer-events: none;
+    }
+    .link-btn {
+      border: 0; background: none; color: var(--tint); font-weight: 500;
+      cursor: pointer; padding: 6px 0; font-size: 17px;
+    }
+
+    /* Hero */
+    .hero {
+      padding: 26px 22px 22px; color: #fff; position: relative;
+      background: linear-gradient(135deg, var(--hero-a, #34c759), var(--hero-b, #248a3d));
+      transition: background .5s ease;
+    }
+    .hero-place { font-size: 15px; opacity: .9; font-weight: 500; }
+    .hero-aqi { font-size: 88px; font-weight: 700; letter-spacing: -.04em; line-height: 1; margin: 8px 0 4px; font-variant-numeric: tabular-nums; }
+    .hero-cat { font-size: 20px; font-weight: 600; }
+    .hero-summary { margin: 10px 0 0; opacity: .95; font-size: 15px; max-width: 52ch; }
+    .hero-meta { margin-top: 14px; font-size: 13px; opacity: .85; }
+    .scale { margin-top: 18px; height: 6px; border-radius: 999px; background: linear-gradient(90deg,#34c759,#ffcc00,#ff9500,#ff3b30,#af52de,#7d0023); position: relative; }
+    .scale-dot { position: absolute; top: 50%; width: 16px; height: 16px; border-radius: 50%; background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,.3); transform: translate(-50%,-50%); transition: left .5s ease; }
+    .hero-status { font-size: 13px; opacity: .85; margin-top: 8px; min-height: 1.2em; }
+
+    /* Plan cards */
+    .plan-body { padding: 4px 20px 16px; }
+    .plan-body p { margin: 8px 0 0; }
+    .plan-body ul { margin: 8px 0 0; padding: 0; list-style: none; }
+    .plan-body li {
+      position: relative; padding: 8px 0 8px 22px; border-top: 1px solid var(--separator);
+      font-size: 16px;
+    }
+    .plan-body li:first-child { border-top: 0; }
+    .plan-body li::before {
+      content: ""; position: absolute; left: 2px; top: 17px; width: 8px; height: 8px;
+      border-radius: 50%; background: var(--tint);
+    }
+    .plan-head { display: flex; align-items: center; gap: 10px; padding: 16px 20px 0; font-weight: 600; font-size: 17px; }
+    .icon {
+      width: 30px; height: 30px; border-radius: 9px; display: grid; place-items: center;
+      background: var(--tint); color: #fff; flex: 0 0 30px;
+    }
+    .icon svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+    .best-window { font-size: 15px; color: var(--muted); margin-top: 6px; }
+    .best-window strong { color: var(--text); font-weight: 500; }
+    .empty { color: var(--muted); padding: 22px 20px; margin: 0; }
+    .hint { color: var(--muted); font-size: 13px; margin: 6px 0 0; }
+
+    /* Switches */
+    .switch { position: relative; width: 51px; height: 31px; flex: 0 0 51px; }
+    .switch input { opacity: 0; width: 0; height: 0; position: absolute; }
+    .switch span {
+      position: absolute; inset: 0; border-radius: 999px; background: var(--fill);
+      transition: background .2s ease; cursor: pointer;
+    }
+    .switch span::after {
+      content: ""; position: absolute; top: 2px; left: 2px; width: 27px; height: 27px;
+      border-radius: 50%; background: #fff; box-shadow: 0 2px 4px rgba(0,0,0,.2); transition: transform .2s ease;
+    }
+    .switch input:checked + span { background: #34c759; }
+    .switch input:checked + span::after { transform: translateX(20px); }
+    .switch input:focus-visible + span { outline: 3px solid var(--tint); outline-offset: 2px; }
+
+    .number-input {
+      width: 110px; text-align: right; border: 0; background: transparent;
+      font-size: 17px; color: var(--tint); padding: 4px; font-variant-numeric: tabular-nums;
+    }
+    .number-input::placeholder { color: var(--muted); }
+    .number-input:focus { outline: none; }
+    details summary { cursor: pointer; list-style: none; }
+    details summary::-webkit-details-marker { display: none; }
+    .error { color: #ff3b30; font-size: 14px; padding: 0 20px 12px; min-height: 0; margin: 0; }
+    .error:empty { display: none; }
+
+    footer { color: var(--muted); font-size: 13px; padding: 24px 8px 0; text-align: center; }
+
+    @media (min-width: 720px) {
+      .plan-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; }
+      .hero, .plan-grid, .household { grid-column: 1 / -1; }
+    }
+    @media (min-width: 720px) { .stack-desk { display: grid; grid-template-columns: 1fr; } }
+    @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
   </style>
 </head>
 <body>
-  <header>
-    <h1>Urban Air Quality Assistant</h1>
-    <p class="lede">Enter today's AQI and your household details to get a low-emission routine and indoor air plan for winter smog.</p>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <span class="brand">Air</span>
+      <button class="theme-btn" id="theme-toggle" type="button" aria-label="Toggle light or dark appearance">Appearance</button>
+    </div>
   </header>
 
-  <main class="grid">
-    <section class="card" aria-labelledby="inputs-title">
-      <h2 id="inputs-title">Today's conditions</h2>
-      <form id="plan-form" novalidate>
-        <label for="aqi">Outdoor AQI (US EPA scale, 0 to 500)</label>
-        <input id="aqi" name="aqi" type="number" min="0" max="500" step="1" inputmode="numeric" required placeholder="e.g. 165">
-        <p class="hint">Check your local AQI from your city's air monitoring website or app.</p>
+  <main>
+    <h1 class="large-title">Air</h1>
+    <p class="subtitle">Live air quality and a daily plan for your family.</p>
 
-        <h3 style="font-size:1rem;margin:18px 0 0">Who lives here?</h3>
-        <label class="check"><input type="checkbox" name="hasChildren"> Children under 12 at home</label>
-        <label class="check"><input type="checkbox" name="hasOlderAdults"> Older adults (65+)</label>
-        <label class="check"><input type="checkbox" name="hasAsthma"> Asthma or allergies</label>
-        <label class="check"><input type="checkbox" name="hasHeartOrLungCondition"> Heart or lung condition</label>
-        <label class="check"><input type="checkbox" name="pregnant"> Pregnancy</label>
-        <label class="check"><input type="checkbox" name="hasPets"> Pets that go outside</label>
-        <label class="check"><input type="checkbox" name="hasAirPurifier"> We have an air purifier</label>
+    <div class="stack">
+      <section class="card" aria-label="Location">
+        <div class="row">
+          <div>
+            <div class="row-label">Location</div>
+            <div class="row-hint" id="location-hint">Choose a city</div>
+          </div>
+          <div class="select-wrap">
+            <select id="city" class="location-select" aria-label="Choose a city"></select>
+          </div>
+        </div>
+        <div class="row">
+          <span class="row-label">Use my current location</span>
+          <button class="link-btn" id="locate-btn" type="button">Locate</button>
+        </div>
+      </section>
 
-        <label for="roomAreaM2">Main room size (m², optional)</label>
-        <input id="roomAreaM2" name="roomAreaM2" type="number" min="1" step="1" inputmode="numeric" placeholder="e.g. 25">
-        <p class="hint">Used to estimate the purifier size you need.</p>
+      <section class="card hero" id="hero" aria-live="polite" aria-label="Current air quality">
+        <div class="hero-place" id="hero-place">Loading…</div>
+        <div class="hero-aqi" id="hero-aqi" aria-label="US AQI">--</div>
+        <div class="hero-cat" id="hero-cat">Fetching air data</div>
+        <p class="hero-summary" id="hero-summary"></p>
+        <div class="scale" aria-hidden="true"><div class="scale-dot" id="scale-dot" style="left:0%"></div></div>
+        <div class="hero-status" id="hero-status" role="status"></div>
+      </section>
 
+      <div class="plan-grid" id="plan"></div>
+
+      <h2 class="section-title">Your household</h2>
+      <section class="card household" aria-label="Household details">
+        <label class="row"><span class="row-label">Children under 12</span><span class="switch"><input type="checkbox" name="hasChildren"><span></span></span></label>
+        <label class="row"><span class="row-label">Older adults (65+)</span><span class="switch"><input type="checkbox" name="hasOlderAdults"><span></span></span></label>
+        <label class="row"><span class="row-label">Asthma or allergies</span><span class="switch"><input type="checkbox" name="hasAsthma"><span></span></span></label>
+        <label class="row"><span class="row-label">Heart or lung condition</span><span class="switch"><input type="checkbox" name="hasHeartOrLungCondition"><span></span></span></label>
+        <label class="row"><span class="row-label">Pregnancy</span><span class="switch"><input type="checkbox" name="pregnant"><span></span></span></label>
+        <label class="row"><span class="row-label">Pets that go outside</span><span class="switch"><input type="checkbox" name="hasPets"><span></span></span></label>
+        <label class="row"><span class="row-label">Air purifier at home</span><span class="switch"><input type="checkbox" name="hasAirPurifier"><span></span></span></label>
+        <label class="row"><span class="row-label">Main room size</span><span><input class="number-input" id="roomAreaM2" type="number" min="1" step="1" inputmode="numeric" placeholder="m²" aria-label="Main room size in square metres"></span></label>
         <p class="error" id="form-error" role="alert"></p>
-        <button type="submit">Build today's plan</button>
-      </form>
-    </section>
+      </section>
 
-    <section class="card" aria-live="polite" aria-labelledby="plan-title">
-      <h2 id="plan-title">Today's plan</h2>
-      <div id="plan"><p class="empty">Enter an AQI to see your plan.</p></div>
-    </section>
+      <section class="card" aria-label="Manual AQI">
+        <details>
+          <summary class="row"><span class="row-label">Enter AQI manually</span><span class="hint">Optional</span></summary>
+          <div class="row">
+            <span class="row-label">US AQI (0 to 500)</span>
+            <input class="number-input" id="aqi-manual" type="number" min="0" max="500" step="1" inputmode="numeric" placeholder="e.g. 165" aria-label="Manual AQI">
+          </div>
+          <div class="row"><span class="hint">Used instead of live data when set.</span><button class="link-btn" id="clear-manual" type="button">Clear</button></div>
+        </details>
+      </section>
+    </div>
 
-    <footer class="full">
-      This tool gives general guidance and does not replace medical advice. For breathing problems, follow your doctor's asthma or care plan and seek urgent care when symptoms are severe. Your entries are stored only in this browser.
+    <footer>
+      General guidance only, not medical advice. For breathing problems, follow your doctor's plan and seek urgent care when symptoms are severe.<br>
+      Live air data: Open-Meteo. Your household details stay in this browser.
     </footer>
   </main>
 
   <script src="js/logic.js"></script>
+  <script src="js/locations.js"></script>
   <script src="js/app.js"></script>
 </body>
 </html>
