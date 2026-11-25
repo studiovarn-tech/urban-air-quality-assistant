@@ -94,8 +94,10 @@ Requirements: a modern browser. Node.js 18 or later is needed only for the tests
 3. Run the tests:
 
    ```bash
-   node --test tests/logic.test.js tests/locations.test.js
+   npm test
    ```
+
+   This runs `node --test tests/logic.test.js tests/locations.test.js`. `npm start` serves the app at http://localhost:8080.
 
 4. To publish with GitHub Pages: Repository Settings → Pages → Deploy from a branch → `main` / root.
 
