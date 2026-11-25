@@ -81,3 +81,41 @@ test("hazardous plan without a purifier suggests buying one instead", () => {
   assert.ok(p.indoor.some((t) => /Consider a HEPA/.test(t)));
   assert.ok(!p.indoor.some((t) => /Run your air purifier/.test(t)));
 });
+
+test("schedule covers the family day in time order", () => {
+  const steps = L.buildSchedule({ aqi: 150, profile: { hasChildren: true } });
+  const times = steps.map((s) => s.time);
+  assert.deepEqual(times, [...times].sort());
+  assert.ok(steps.every((s) => s.text.length > 0));
+});
+
+test("hazardous schedule keeps the family indoors at midday", () => {
+  const steps = L.buildSchedule({ aqi: 320, profile: { hasAirPurifier: true } });
+  const midday = steps.find((s) => s.time === "11:00");
+  assert.match(midday.text, /Stay indoors/);
+  assert.ok(steps.some((s) => /purifier/i.test(s.text)));
+});
+
+test("good-air schedule allows outdoor time and mentions the inhaler for asthma", () => {
+  const steps = L.buildSchedule({ aqi: 30, profile: { hasAsthma: true } });
+  const midday = steps.find((s) => s.time === "11:00");
+  // Asthma bumps AQI 30 (Good) to Moderate, so outdoor time is 60 minutes.
+  assert.match(midday.text, /up to 60 minutes/);
+  assert.match(midday.text, /inhaler/);
+});
+
+test("impact reports minutes limited against a clean-air day", () => {
+  const impact = L.buildImpact({ aqi: 120, profile: {} });
+  assert.equal(impact.baselineMinutes, 120);
+  assert.equal(impact.allowedOutdoorMinutes, 30);
+  assert.equal(impact.minutesLimited, 90);
+  assert.match(impact.headline, /capped at 30 minutes/);
+});
+
+test("impact says outdoor time is paused when the allowance is zero", () => {
+  const impact = L.buildImpact({ aqi: 320, profile: { roomAreaM2: 20 } });
+  assert.equal(impact.allowedOutdoorMinutes, 0);
+  assert.equal(impact.minutesLimited, 120);
+  assert.equal(impact.purifierCADR, L.purifierCADR(20));
+  assert.match(impact.headline, /paused/);
+});

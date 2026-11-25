@@ -189,6 +189,82 @@
     };
   }
 
+  /**
+   * A family's day, with times, built from the plan. Each step is tailored
+   * to the air level and the household (see buildPlan for the rules).
+   */
+  function buildSchedule(input) {
+    var plan = input.plan || buildPlan(input);
+    var profile = input.profile || {};
+    var idx = ORDER.indexOf(plan.effectiveKey);
+    var poor = idx >= ORDER.indexOf("unhealthy");
+    var moderateOrWorse = idx >= ORDER.indexOf("moderate");
+    var purifierOwned = profile.hasAirPurifier !== false;
+    var steps = [];
+
+    if (poor) {
+      steps.push({ time: "07:00", text: "Keep windows shut. Run the purifier before anyone leaves home." });
+    } else if (moderateOrWorse) {
+      steps.push({ time: "07:00", text: "Keep windows closed through the morning smog." });
+    } else {
+      steps.push({ time: "07:00", text: "Open windows for 10 to 15 minutes to refresh the air." });
+    }
+
+    steps.push({
+      time: "08:30",
+      text: plan.commute.length ? plan.commute[0] : "Walk, cycle or take transit to school or work."
+    });
+
+    if (plan.outdoor.maxMinutesPerSession > 0) {
+      var outdoorText = "Outdoor play or exercise, up to " + plan.outdoor.maxMinutesPerSession + " minutes.";
+      if (profile.hasAsthma) outdoorText += " Take your reliever inhaler with you.";
+      steps.push({ time: "11:00", text: outdoorText });
+    } else {
+      steps.push({ time: "11:00", text: "Stay indoors. Move play and exercise inside." });
+    }
+
+    steps.push({ time: "17:00", text: "Avoid outdoor exercise and busy roads during the evening rush." });
+
+    steps.push({
+      time: "19:00",
+      text: poor
+        ? "Cook with the range hood on. No candles, incense or fireplace."
+        : "Cook with the range hood on to keep indoor particles down."
+    });
+
+    steps.push({
+      time: "21:00",
+      text: purifierOwned
+        ? "Keep the bedroom purifier on a low setting overnight."
+        : "Keep bedroom windows closed overnight."
+    });
+
+    return steps;
+  }
+
+  /**
+   * Summary of what the plan changes today, compared with a clean-air day
+   * (120 minutes of outdoor time at Good).
+   */
+  function buildImpact(input) {
+    var plan = input.plan || buildPlan(input);
+    var baseline = outdoorMinutes("good");
+    var allowed = plan.outdoor.maxMinutesPerSession;
+    var limited = Math.max(0, baseline - allowed);
+    var actions = plan.indoor.length + plan.commute.length + plan.masks.length + plan.routines.length;
+    var headline = allowed === 0
+      ? "Outdoor time is paused today."
+      : "Outdoor time is capped at " + allowed + " minutes, " + limited + " minutes less than a clean-air day.";
+    return {
+      baselineMinutes: baseline,
+      allowedOutdoorMinutes: allowed,
+      minutesLimited: limited,
+      actionsToday: actions,
+      headline: headline,
+      purifierCADR: plan.purchase ? plan.purchase.minCADR : null
+    };
+  }
+
   var api = {
     CATEGORIES: CATEGORIES,
     categorize: categorize,
@@ -197,7 +273,9 @@
     bestOutdoorWindow: bestOutdoorWindow,
     outdoorMinutes: outdoorMinutes,
     purifierCADR: purifierCADR,
-    buildPlan: buildPlan
+    buildPlan: buildPlan,
+    buildSchedule: buildSchedule,
+    buildImpact: buildImpact
   };
 
   if (typeof module !== "undefined" && module.exports) {

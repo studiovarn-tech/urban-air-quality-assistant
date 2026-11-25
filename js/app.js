@@ -162,7 +162,17 @@
       return;
     }
     var plan = L.buildPlan({ aqi: aqiValue, profile: state.profile });
+    var impact = L.buildImpact({ plan: plan });
+    var schedule = L.buildSchedule({ plan: plan, profile: state.profile });
     var cards = [];
+
+    var impactBody = "<p style=\"margin:4px 0 0;font-weight:600\">" + esc(impact.headline) + "</p>" +
+      "<p class=\"best-window\">" + esc(impact.actionsToday) + " actions planned for today" +
+      (impact.purifierCADR ? ", purifier target " + esc(impact.purifierCADR) + " CFM" : "") + ".</p>";
+    cards.push(sectionCard("routines", "Impact today", impactBody));
+
+    cards.push(sectionCard("outdoor", "Your day",
+      list(schedule.map(function (s) { return s.time + "  ·  " + s.text; }))));
 
     var adjusted = plan.sensitiveHousehold && plan.effectiveCategory !== plan.measuredCategory
       ? '<p class="hint">Adjusted one level stricter for sensitive people at home.</p>' : "";
