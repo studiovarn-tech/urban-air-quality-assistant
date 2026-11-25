@@ -1,0 +1,14 @@
+{
+  "name": "urban-air-quality-assistant",
+  "version": "1.0.0",
+  "description": "Personalized low-emission routines and indoor air hacks for winter smog.",
+  "private": true,
+  "license": "UNLICENSED",
+  "scripts": {
+    "test": "node --test tests/logic.test.js tests/locations.test.js",
+    "start": "python -m http.server 8080"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

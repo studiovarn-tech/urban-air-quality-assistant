@@ -18,6 +18,23 @@
   ];
 
   var ORDER = CATEGORIES.map(function (c) { return c.key; });
+  var MAX_AQI = CATEGORIES[CATEGORIES.length - 1].max;
+  var SQ_FT_PER_M2 = 10.7639;
+
+  /** True for a finite number in the AQI scale (0 to MAX_AQI). */
+  function isValidAQI(value) {
+    return typeof value === "number" && isFinite(value) && value >= 0 && value <= MAX_AQI;
+  }
+
+  /** True when band `key` is at or above band `minKey` on the EPA scale. */
+  function atLeast(key, minKey) {
+    return ORDER.indexOf(key) >= ORDER.indexOf(minKey);
+  }
+
+  /** Households that do not say they lack a purifier are treated as owning one. */
+  function ownsPurifier(profile) {
+    return profile.hasAirPurifier !== false;
+  }
 
   function categorize(aqi) {
     var value = Number(aqi);
@@ -79,7 +96,7 @@
   function purifierCADR(roomAreaM2) {
     var area = Number(roomAreaM2);
     if (!isFinite(area) || area <= 0) throw new RangeError("Room area must be positive");
-    var sqft = area * 10.7639;
+    var sqft = area * SQ_FT_PER_M2;
     return Math.ceil((2 / 3) * sqft);
   }
 
@@ -89,9 +106,9 @@
     var base = categorize(aqi);
     var eff = effectiveCategory(aqi, profile);
     var sensitive = isSensitive(profile);
-    var poor = ORDER.indexOf(eff.key) >= ORDER.indexOf("unhealthy");
-    var moderateOrWorse = ORDER.indexOf(eff.key) >= ORDER.indexOf("moderate");
-    var usgOrWorse = ORDER.indexOf(eff.key) >= ORDER.indexOf("usg");
+    var poor = atLeast(eff.key, "unhealthy");
+    var moderateOrWorse = atLeast(eff.key, "moderate");
+    var usgOrWorse = atLeast(eff.key, "usg");
 
     var outdoor = {
       maxMinutesPerSession: outdoorMinutes(eff.key),
@@ -118,7 +135,7 @@
       indoor.push("Keep windows and doors closed during high-pollution hours.");
     }
     if (poor) {
-      if (profile.hasAirPurifier === false) {
+      if (!ownsPurifier(profile)) {
         indoor.push("Consider a HEPA air purifier for the main living area and bedrooms (see purifier sizing below).");
       } else {
         indoor.push("Run your air purifier on its highest safe setting in the main living area and bedrooms.");
@@ -159,7 +176,7 @@
     var routines = [];
     routines.push("Batch errands into a single trip to cut cold-start emissions.");
     if (!poor) routines.push("Plan one active outdoor session today during the best window.");
-    if (profile.hasAirPurifier !== false) {
+    if (ownsPurifier(profile)) {
       routines.push("Pre-run the purifier for 30 minutes before the family returns home.");
     }
 
@@ -196,10 +213,8 @@
   function buildSchedule(input) {
     var plan = input.plan || buildPlan(input);
     var profile = input.profile || {};
-    var idx = ORDER.indexOf(plan.effectiveKey);
-    var poor = idx >= ORDER.indexOf("unhealthy");
-    var moderateOrWorse = idx >= ORDER.indexOf("moderate");
-    var purifierOwned = profile.hasAirPurifier !== false;
+    var poor = atLeast(plan.effectiveKey, "unhealthy");
+    var moderateOrWorse = atLeast(plan.effectiveKey, "moderate");
     var steps = [];
 
     if (poor) {
@@ -234,7 +249,7 @@
 
     steps.push({
       time: "21:00",
-      text: purifierOwned
+      text: ownsPurifier(profile)
         ? "Keep the bedroom purifier on a low setting overnight."
         : "Keep bedroom windows closed overnight."
     });
@@ -267,6 +282,8 @@
 
   var api = {
     CATEGORIES: CATEGORIES,
+    MAX_AQI: MAX_AQI,
+    isValidAQI: isValidAQI,
     categorize: categorize,
     effectiveCategory: effectiveCategory,
     isSensitive: isSensitive,

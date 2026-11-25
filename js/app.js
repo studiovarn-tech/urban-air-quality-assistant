@@ -1,9 +1,16 @@
+/**
+ * Interface controller: state, location flow, rendering, storage and sharing.
+ * All advice comes from window.AQLogic; all air data from window.AQLocations.
+ */
 (function () {
   "use strict";
 
   var L = window.AQLogic;
   var Loc = window.AQLocations;
+
   var STORAGE_KEY = "uaqa-state-v2";
+  var CURRENT_OPTION = "__current";
+  var GEO_OPTIONS = { enableHighAccuracy: false, timeout: 10000, maximumAge: 600000 };
   var BOOL_FIELDS = [
     "hasChildren", "hasOlderAdults", "hasAsthma",
     "hasHeartOrLungCondition", "pregnant", "hasPets", "hasAirPurifier"
@@ -29,11 +36,13 @@
     purchase: '<path d="M9.5 4.5a2.5 2.5 0 0 1 5 0M5 9h14M6 9l1 11h10l1-11"/>'
   };
 
-  var $ = function (id) { return document.getElementById(id); };
+  function $(id) { return document.getElementById(id); }
+
   var els = {
     city: $("city"),
     hint: $("location-hint"),
     locate: $("locate-btn"),
+    openSearch: $("open-search"),
     heroPlace: $("hero-place"),
     heroAqi: $("hero-aqi"),
     heroCat: $("hero-cat"),
@@ -41,40 +50,65 @@
     heroStatus: $("hero-status"),
     hero: $("hero"),
     dot: $("scale-dot"),
+    share: $("share-btn"),
+    shareStatus: $("share-status"),
     plan: $("plan"),
     error: $("form-error"),
     room: $("roomAreaM2"),
     manual: $("aqi-manual"),
     clearManual: $("clear-manual"),
     theme: $("theme-toggle"),
-    openSearch: $("open-search"),
     sheet: $("sheet"),
     backdrop: $("sheet-backdrop"),
     placeSearch: $("place-search"),
     results: $("search-results"),
     sheetLocate: $("sheet-locate"),
     sheetError: $("sheet-error"),
-    sheetDone: $("sheet-done"),
-    share: $("share-btn"),
-    shareStatus: $("share-status")
+    sheetDone: $("sheet-done")
   };
 
   var state = {
     cityId: Loc.DEFAULT_CITY_ID,
-    coords: null,          // { lat, lon, name } when using a searched place or current location
+    coords: null,      // { lat, lon, name } for a searched place or current location
     profile: {},
-    manualAqi: null,
-    theme: null,           // "light" | "dark" | null (follow system)
-    onboarded: false       // true once the user has chosen a location in the sheet
+    manualAqi: null,   // user-entered AQI, overrides live data when valid
+    theme: null,       // "light" | "dark" | null (follow system)
+    onboarded: false   // true once the user has chosen a location in the sheet
   };
-  var requestId = 0;
-  var lastAQI = null;      // { aqi, time }
+  var lastAQI = null;  // { aqi, updated } from the live service, or null
+  var requestId = 0;   // guards against out-of-order live-data responses
+  var pendingPlace = null;
+  var searchTimer = null;
+  var searchId = 0;
+
+  /* ---------- Small helpers ---------- */
 
   function esc(text) {
     var d = document.createElement("div");
     d.textContent = String(text);
     return d.innerHTML;
   }
+
+  function list(items) {
+    return "<ul>" + items.map(function (t) { return "<li>" + esc(t) + "</li>"; }).join("") + "</ul>";
+  }
+
+  function sectionCard(iconKey, title, bodyHtml) {
+    return '<section class="card" aria-label="' + esc(title) + '">' +
+      '<div class="plan-head"><span class="icon"><svg viewBox="0 0 24 24" aria-hidden="true">' +
+      ICONS[iconKey] + "</svg></span>" + esc(title) + "</div>" +
+      '<div class="plan-body">' + bodyHtml + "</div></section>";
+  }
+
+  function round4(n) { return Number(n.toFixed(4)); }
+
+  function formatTime(date) {
+    return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  }
+
+  function hasManualAQI() { return L.isValidAQI(state.manualAqi); }
+
+  /* ---------- Persistence and theme ---------- */
 
   function saveState() {
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch (e) { /* storage blocked */ }
@@ -85,14 +119,13 @@
       var raw = localStorage.getItem(STORAGE_KEY);
       if (!raw) return;
       var saved = JSON.parse(raw);
-      if (saved && typeof saved === "object") {
-        if (Loc.findCity(saved.cityId)) state.cityId = saved.cityId;
-        if (saved.coords && Loc.isValidCoord(saved.coords.lat, saved.coords.lon)) state.coords = saved.coords;
-        if (saved.profile && typeof saved.profile === "object") state.profile = saved.profile;
-        if (typeof saved.manualAqi === "number") state.manualAqi = saved.manualAqi;
-        if (saved.theme === "light" || saved.theme === "dark") state.theme = saved.theme;
-        if (saved.onboarded === true) state.onboarded = true;
-      }
+      if (!saved || typeof saved !== "object") return;
+      if (Loc.findCity(saved.cityId)) state.cityId = saved.cityId;
+      if (saved.coords && Loc.isValidCoord(saved.coords.lat, saved.coords.lon)) state.coords = saved.coords;
+      if (saved.profile && typeof saved.profile === "object") state.profile = saved.profile;
+      if (L.isValidAQI(saved.manualAqi)) state.manualAqi = saved.manualAqi;
+      if (saved.theme === "light" || saved.theme === "dark") state.theme = saved.theme;
+      if (saved.onboarded === true) state.onboarded = true;
     } catch (e) { /* corrupt storage: start fresh */ }
   }
 
@@ -101,8 +134,18 @@
     else document.documentElement.removeAttribute("data-theme");
   }
 
+  function isDarkNow() {
+    var attr = document.documentElement.getAttribute("data-theme");
+    if (attr) return attr === "dark";
+    return window.matchMedia("(prefers-color-scheme: dark)").matches;
+  }
+
+  /* ---------- Location ---------- */
+
   function currentPlace() {
-    if (state.coords) return { name: state.coords.name || "Current location", lat: state.coords.lat, lon: state.coords.lon };
+    if (state.coords) {
+      return { name: state.coords.name || "Current location", lat: state.coords.lat, lon: state.coords.lon };
+    }
     var city = Loc.findCity(state.cityId);
     return { name: city.name + ", " + city.country, lat: city.lat, lon: city.lon };
   }
@@ -110,13 +153,49 @@
   function populateCities() {
     var html = "";
     if (state.coords) {
-      html += '<option value="__current">' + esc(state.coords.name || "Current location") + "</option>";
+      html += '<option value="' + CURRENT_OPTION + '">' + esc(state.coords.name || "Current location") + "</option>";
     }
     Loc.CITIES.forEach(function (c) {
       html += '<option value="' + esc(c.id) + '">' + esc(c.name) + ", " + esc(c.country) + "</option>";
     });
     els.city.innerHTML = html;
-    els.city.value = state.coords ? "__current" : state.cityId;
+    els.city.value = state.coords ? CURRENT_OPTION : state.cityId;
+  }
+
+  function showHint() {
+    els.hint.textContent = state.coords
+      ? "Lat " + state.coords.lat.toFixed(2) + ", Lon " + state.coords.lon.toFixed(2)
+      : "Live US AQI for the selected city";
+  }
+
+  /** Calls onFound({ lat, lon, name }) or onFail(message). */
+  function requestPosition(onFound, onFail) {
+    if (!navigator.geolocation) {
+      onFail("This browser cannot share your location.");
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(function (pos) {
+      onFound({ lat: round4(pos.coords.latitude), lon: round4(pos.coords.longitude), name: "Current location" });
+    }, function () {
+      onFail("Location permission was not granted.");
+    }, GEO_OPTIONS);
+  }
+
+  /** Applies the location already set on state: updates the picker and fetches AQI. */
+  function commitLocation() {
+    populateCities();
+    showHint();
+    saveState();
+    loadLiveAQI();
+  }
+
+  /* ---------- Air data and rendering ---------- */
+
+  /** The reading to show: a valid manual AQI wins over live data. */
+  function currentAQI() {
+    if (hasManualAQI()) return { aqi: state.manualAqi, status: "Manual reading" };
+    if (lastAQI) return { aqi: lastAQI.aqi, status: "Updated " + lastAQI.updated + " · Open-Meteo" };
+    return { aqi: null, status: "" };
   }
 
   function setHeroColors(key) {
@@ -125,153 +204,117 @@
     els.hero.style.setProperty("--hero-b", pair[1]);
   }
 
-  function renderHero(aqiValue, status) {
-    var place = currentPlace();
-    els.heroPlace.textContent = place.name;
-    els.heroStatus.textContent = status || "";
-    if (aqiValue === null || aqiValue === undefined) {
+  function renderHero(reading) {
+    els.heroPlace.textContent = currentPlace().name;
+    els.heroStatus.textContent = reading.status;
+    if (reading.aqi === null) {
       els.heroAqi.textContent = "--";
       els.heroCat.textContent = "No air data yet";
       els.heroSummary.textContent = "Choose a location or enter an AQI manually.";
       setHeroColors("good");
       els.dot.style.left = "0%";
-      return null;
+      return;
     }
-    var cat = L.categorize(aqiValue);
-    els.heroAqi.textContent = Math.round(aqiValue);
+    var cat = L.categorize(reading.aqi);
+    els.heroAqi.textContent = Math.round(reading.aqi);
     els.heroCat.textContent = cat.label;
     els.heroSummary.textContent = cat.advice;
     setHeroColors(cat.key);
-    els.dot.style.left = Math.min(100, (aqiValue / 500) * 100) + "%";
-    return cat;
+    els.dot.style.left = Math.min(100, (reading.aqi / L.MAX_AQI) * 100) + "%";
   }
 
-  function sectionCard(key, title, bodyHtml) {
-    return '<section class="card" aria-label="' + esc(title) + '">' +
-      '<div class="plan-head"><span class="icon"><svg viewBox="0 0 24 24" aria-hidden="true">' + ICONS[key] + "</svg></span>" +
-      esc(title) + "</div>" + '<div class="plan-body">' + bodyHtml + "</div></section>";
+  function impactHtml(impact) {
+    var purifier = impact.purifierCADR ? ", purifier target " + esc(impact.purifierCADR) + " CFM" : "";
+    return '<p style="margin:4px 0 0;font-weight:600">' + esc(impact.headline) + "</p>" +
+      '<p class="best-window">' + esc(impact.actionsToday) + " actions planned for today" + purifier + ".</p>";
   }
 
-  function list(items) {
-    return "<ul>" + items.map(function (t) { return "<li>" + esc(t) + "</li>"; }).join("") + "</ul>";
+  function outdoorHtml(plan) {
+    var adjusted = plan.sensitiveHousehold && plan.effectiveCategory !== plan.measuredCategory
+      ? '<p class="hint">Adjusted one level stricter for sensitive people at home.</p>'
+      : "";
+    return '<p class="best-window"><strong>Best window:</strong> ' + esc(plan.outdoor.bestWindow) + "</p>" +
+      list(plan.outdoor.tips) + adjusted;
   }
 
-  function renderPlan(aqiValue) {
-    if (aqiValue === null || aqiValue === undefined) {
+  function renderPlan(aqi) {
+    if (aqi === null) {
       els.plan.innerHTML = '<section class="card"><p class="empty">Your plan appears here once air data is available.</p></section>';
       return;
     }
-    var plan = L.buildPlan({ aqi: aqiValue, profile: state.profile });
-    var impact = L.buildImpact({ plan: plan });
+    var plan = L.buildPlan({ aqi: aqi, profile: state.profile });
     var schedule = L.buildSchedule({ plan: plan, profile: state.profile });
-    var cards = [];
-
-    var impactBody = "<p style=\"margin:4px 0 0;font-weight:600\">" + esc(impact.headline) + "</p>" +
-      "<p class=\"best-window\">" + esc(impact.actionsToday) + " actions planned for today" +
-      (impact.purifierCADR ? ", purifier target " + esc(impact.purifierCADR) + " CFM" : "") + ".</p>";
-    cards.push(sectionCard("routines", "Impact today", impactBody));
-
-    cards.push(sectionCard("outdoor", "Your day",
-      list(schedule.map(function (s) { return s.time + "  ·  " + s.text; }))));
-
-    var adjusted = plan.sensitiveHousehold && plan.effectiveCategory !== plan.measuredCategory
-      ? '<p class="hint">Adjusted one level stricter for sensitive people at home.</p>' : "";
-    cards.push(sectionCard("outdoor", "Outdoor routine",
-      '<p class="best-window"><strong>Best window:</strong> ' + esc(plan.outdoor.bestWindow) + "</p>" +
-      list(plan.outdoor.tips) + adjusted));
-
-    cards.push(sectionCard("indoor", "Indoor air",
-      list(plan.indoor.length ? plan.indoor : ["Air is clean enough for normal indoor routines."])));
-
+    var cards = [
+      sectionCard("routines", "Impact today", impactHtml(L.buildImpact({ plan: plan }))),
+      sectionCard("outdoor", "Your day", list(schedule.map(function (s) { return s.time + "  ·  " + s.text; }))),
+      sectionCard("outdoor", "Outdoor routine", outdoorHtml(plan)),
+      sectionCard("indoor", "Indoor air", list(plan.indoor.length ? plan.indoor : ["Air is clean enough for normal indoor routines."]))
+    ];
     if (plan.masks.length) cards.push(sectionCard("masks", "Masks", list(plan.masks)));
-
     cards.push(sectionCard("commute", "Low-emission commute",
       list(plan.commute.length ? plan.commute : ["Walking, cycling or transit are good low-emission choices."])));
-
     cards.push(sectionCard("routines", "Today's routines", list(plan.routines)));
-
     if (plan.purchase) {
       cards.push(sectionCard("purchase", "Purifier size",
-        '<p>For ' + esc(plan.purchase.roomAreaM2) + " m², aim for a CADR of at least <strong>" +
-        esc(plan.purchase.minCADR) + " CFM</strong>.</p><p class=\"hint\">" + esc(plan.purchase.note) + "</p>"));
+        "<p>For " + esc(plan.purchase.roomAreaM2) + " m², aim for a CADR of at least <strong>" +
+        esc(plan.purchase.minCADR) + " CFM</strong>.</p>" +
+        '<p class="hint">' + esc(plan.purchase.note) + "</p>"));
     }
     els.plan.innerHTML = cards.join("");
   }
 
   function refresh() {
-    var manualValid = typeof state.manualAqi === "number" && state.manualAqi >= 0 && state.manualAqi <= 500;
-    if (manualValid) {
-      renderHero(state.manualAqi, "Manual reading");
-      renderPlan(state.manualAqi);
-      return;
-    }
-    renderHero(lastAQI ? lastAQI.aqi : null, lastAQI ? "Updated " + lastAQI.label + " · Open-Meteo" : "");
-    renderPlan(lastAQI ? lastAQI.aqi : null);
+    var reading = currentAQI();
+    renderHero(reading);
+    renderPlan(reading.aqi);
+  }
+
+  /** Shows a live-data status line unless a manual reading is being used. */
+  function setLiveStatus(text) {
+    if (!hasManualAQI()) els.heroStatus.textContent = text;
   }
 
   function loadLiveAQI() {
     var id = ++requestId;
+    lastAQI = null;
+    refresh();
+    setLiveStatus("Updating…");
     var place = currentPlace();
-    els.heroStatus.textContent = "Updating…";
     Loc.fetchCurrentAQI(place.lat, place.lon).then(function (result) {
       if (id !== requestId) return;
-      var t = new Date();
-      lastAQI = {
-        aqi: result.aqi,
-        label: t.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
-      };
+      lastAQI = { aqi: result.aqi, updated: formatTime(new Date()) };
       refresh();
-      showHint();
     }).catch(function () {
       if (id !== requestId) return;
-      lastAQI = null;
       refresh();
-      els.heroStatus.textContent = "Couldn't load live air data. Check your connection or enter AQI manually.";
+      setLiveStatus("Couldn't load live air data. Check your connection or enter AQI manually.");
     });
   }
 
-  function showHint() {
-    if (state.coords) {
-      els.hint.textContent = "Lat " + state.coords.lat.toFixed(2) + ", Lon " + state.coords.lon.toFixed(2);
-    } else {
-      els.hint.textContent = "Live US AQI for the selected city";
-    }
-  }
+  // Restore saved state before the controls below read from it.
+  loadState();
+  applyTheme();
 
-  function setLocationById(value) {
-    if (value === "__current") return;
+  /* ---------- Main controls ---------- */
+
+  els.city.addEventListener("change", function () {
+    if (els.city.value === CURRENT_OPTION) return;
     state.coords = null;
-    state.cityId = value;
-    populateCities();
-    showHint();
-    saveState();
-    loadLiveAQI();
-  }
-
-  els.city.addEventListener("change", function () { setLocationById(els.city.value); });
+    state.cityId = els.city.value;
+    commitLocation();
+  });
 
   els.locate.addEventListener("click", function () {
-    if (!navigator.geolocation) {
-      els.error.textContent = "This browser cannot share your location.";
-      return;
-    }
     els.error.textContent = "";
     els.locate.textContent = "Locating…";
-    navigator.geolocation.getCurrentPosition(function (pos) {
+    requestPosition(function (coords) {
       els.locate.textContent = "Locate";
-      state.coords = {
-        lat: Number(pos.coords.latitude.toFixed(4)),
-        lon: Number(pos.coords.longitude.toFixed(4)),
-        name: "Current location"
-      };
-      populateCities();
-      showHint();
-      saveState();
-      loadLiveAQI();
-    }, function () {
+      state.coords = coords;
+      commitLocation();
+    }, function (message) {
       els.locate.textContent = "Locate";
-      els.error.textContent = "Location permission was not granted. Pick a city instead.";
-    }, { enableHighAccuracy: false, timeout: 10000, maximumAge: 600000 });
+      els.error.textContent = message + " Pick a city instead.";
+    });
   });
 
   document.querySelectorAll('input[type="checkbox"]').forEach(function (box) {
@@ -302,8 +345,8 @@
   if (state.manualAqi !== null) els.manual.value = state.manualAqi;
   els.manual.addEventListener("input", function () {
     var raw = els.manual.value.trim();
-    var v = raw === "" ? null : Number(raw);
-    state.manualAqi = (v !== null && isFinite(v) && v >= 0 && v <= 500) ? v : null;
+    var value = raw === "" ? NaN : Number(raw);
+    state.manualAqi = L.isValidAQI(value) ? value : null;
     saveState();
     refresh();
   });
@@ -315,25 +358,20 @@
   });
 
   els.theme.addEventListener("click", function () {
-    var dark = document.documentElement.getAttribute("data-theme") === "dark" ||
-      (!document.documentElement.getAttribute("data-theme") && window.matchMedia("(prefers-color-scheme: dark)").matches);
-    state.theme = dark ? "light" : "dark";
+    state.theme = isDarkNow() ? "light" : "dark";
     applyTheme();
     saveState();
   });
 
-  /* ---------- Location sheet (first run and "Search") ---------- */
+  /* ---------- Location sheet (first visit and "Search") ---------- */
 
-  var pendingPlace = null;   // place chosen in the sheet, not yet applied
-  var searchTimer = null;
-  var searchId = 0;
-
-  function setPlace(place) {
-    state.coords = { lat: place.lat, lon: place.lon, name: place.name };
-    populateCities();
-    showHint();
-    saveState();
-    loadLiveAQI();
+  function choosePlace(place, activeButton) {
+    pendingPlace = place;
+    els.sheetError.textContent = "";
+    els.sheetDone.disabled = false;
+    els.results.querySelectorAll(".result").forEach(function (b) {
+      b.setAttribute("aria-pressed", String(b === activeButton));
+    });
   }
 
   function renderResults(items, emptyText) {
@@ -348,24 +386,19 @@
       return;
     }
     items.forEach(function (item) {
+      var sub = [item.region, item.country].filter(Boolean).join(", ");
+      var place = { name: sub ? item.name + ", " + sub : item.name, lat: item.lat, lon: item.lon };
       var btn = document.createElement("button");
       btn.type = "button";
       btn.className = "result";
+      btn.setAttribute("aria-pressed", "false");
       btn.textContent = item.name;
-      var sub = [item.region, item.country].filter(Boolean).join(", ");
       if (sub) {
         var small = document.createElement("small");
         small.textContent = sub;
         btn.appendChild(small);
       }
-      btn.addEventListener("click", function () {
-        pendingPlace = { name: sub ? item.name + ", " + sub : item.name, lat: item.lat, lon: item.lon };
-        els.sheetError.textContent = "";
-        els.sheetDone.disabled = false;
-        els.results.querySelectorAll(".result").forEach(function (b) {
-          b.style.fontWeight = b === btn ? "600" : "";
-        });
-      });
+      btn.addEventListener("click", function () { choosePlace(place, btn); });
       els.results.appendChild(btn);
     });
   }
@@ -393,9 +426,7 @@
   }
 
   els.openSearch.addEventListener("click", openSheet);
-  els.backdrop.addEventListener("click", function () {
-    if (state.onboarded) closeSheet();
-  });
+  els.backdrop.addEventListener("click", function () { if (state.onboarded) closeSheet(); });
   document.addEventListener("keydown", function (e) {
     if (e.key === "Escape" && !els.sheet.hidden && state.onboarded) closeSheet();
   });
@@ -417,41 +448,31 @@
   });
 
   els.sheetLocate.addEventListener("click", function () {
-    if (!navigator.geolocation) {
-      els.sheetError.textContent = "This browser cannot share your location. Search for a city instead.";
-      return;
-    }
     els.sheetError.textContent = "";
-    navigator.geolocation.getCurrentPosition(function (pos) {
-      pendingPlace = {
-        name: "Current location",
-        lat: Number(pos.coords.latitude.toFixed(4)),
-        lon: Number(pos.coords.longitude.toFixed(4))
-      };
-      els.sheetDone.disabled = false;
-      els.results.querySelectorAll(".result").forEach(function (b) { b.style.fontWeight = ""; });
-    }, function () {
-      els.sheetError.textContent = "Location permission was not granted. Search for a city instead.";
-    }, { enableHighAccuracy: false, timeout: 10000, maximumAge: 600000 });
+    requestPosition(function (coords) {
+      choosePlace(coords, null);
+    }, function (message) {
+      els.sheetError.textContent = message + " Search for a city instead.";
+    });
   });
 
   els.sheetDone.addEventListener("click", function () {
     if (!pendingPlace) return;
     state.onboarded = true;
-    setPlace(pendingPlace);
+    state.coords = pendingPlace;
     closeSheet();
+    commitLocation();
   });
 
   /* ---------- Share ---------- */
 
   function buildShareText() {
+    var reading = currentAQI();
+    if (reading.aqi === null) return null;
     var place = currentPlace();
-    var manualValid = typeof state.manualAqi === "number";
-    var aqi = manualValid ? state.manualAqi : (lastAQI ? lastAQI.aqi : null);
-    if (aqi === null) return null;
-    var plan = L.buildPlan({ aqi: aqi, profile: state.profile });
+    var plan = L.buildPlan({ aqi: reading.aqi, profile: state.profile });
     var lines = [
-      "Air in " + place.name + ": US AQI " + Math.round(aqi) + " (" + plan.effectiveCategory + ").",
+      "Air in " + place.name + ": US AQI " + Math.round(reading.aqi) + " (" + plan.effectiveCategory + ").",
       plan.summary,
       "Best outdoor window: " + plan.outdoor.bestWindow + "."
     ];
@@ -462,36 +483,31 @@
 
   function setShareStatus(text) { els.shareStatus.textContent = text; }
 
+  function copyPlan(text) {
+    if (!(navigator.clipboard && navigator.clipboard.writeText)) {
+      setShareStatus("Sharing is not supported in this browser.");
+      return;
+    }
+    navigator.clipboard.writeText(text).then(function () {
+      setShareStatus("Plan copied to clipboard.");
+    }).catch(function () {
+      setShareStatus("Could not copy. Select the plan text manually.");
+    });
+  }
+
   els.share.addEventListener("click", function () {
     var text = buildShareText();
     if (!text) { setShareStatus("Air data is needed before you can share."); return; }
-    var title = "Today's air plan";
-    if (navigator.share) {
-      navigator.share({ title: title, text: text }).then(function () {
-        setShareStatus("Shared.");
-      }).catch(function (err) {
-        if (err && err.name === "AbortError") return;
-        copyFallback(text);
-      });
-    } else {
-      copyFallback(text);
-    }
+    if (!navigator.share) { copyPlan(text); return; }
+    navigator.share({ title: "Today's air plan", text: text }).then(function () {
+      setShareStatus("Shared.");
+    }).catch(function (err) {
+      if (!err || err.name !== "AbortError") copyPlan(text);
+    });
   });
-
-  function copyFallback(text) {
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(text).then(function () {
-        setShareStatus("Plan copied to clipboard.");
-      }).catch(function () { setShareStatus("Could not copy. Select the plan text manually."); });
-    } else {
-      setShareStatus("Sharing is not supported in this browser.");
-    }
-  }
 
   /* ---------- Start ---------- */
 
-  loadState();
-  applyTheme();
   populateCities();
   showHint();
   refresh();
